@@ -2,12 +2,11 @@ import { useJobWS } from "../context/ws/hook/useJobWS";
 import { JobList } from "./JobList";
 
 export const Dashboard = () => {
-  const { jobs, error } = useJobWS();
+  const { jobs, error, isReady } = useJobWS();
 
-  if (error) {
-    // TODO: Handle error display (and loading ?)
-    return null;
-  }
+  if (!isReady) return null;
+
+  if (error) return <div>Something went wrong...</div>;
 
   return <JobList jobs={jobs} />;
 };
