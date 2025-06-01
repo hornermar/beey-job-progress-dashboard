@@ -1,12 +1,13 @@
 import { memo } from "react";
 
 import type { Job } from "../types/index";
+import { JobStatusLabels } from "../constants/jobLabels";
 
 interface JobProps {
   job: Job;
 }
 
-// React.memo is used to prevent unnecessary re-renders (if the job data hasn't changed but the Dashboard is re-rendered).
+// React.memo prevents unnecessary re-rendering of this component (when Dashboard is re-rendered).
 
 export const JobItem = memo(({ job }: JobProps) => {
   return (
@@ -18,7 +19,7 @@ export const JobItem = memo(({ job }: JobProps) => {
           style={{ width: `${job.progress}%` }}
         ></div>
       </div>
-      <div className="job-status">{job.status}</div>
+      <div className="job-status">{JobStatusLabels[job.status]}</div>
     </div>
   );
 });

@@ -1,59 +1,71 @@
-import { useEffect, useState, type PropsWithChildren } from "react";
+import {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  type PropsWithChildren,
+} from "react";
 
 import { JobWSContext } from "./JobWSContext";
-import type { Job } from "../../../types";
+import {
+  JobEvent,
+  JobStatus,
+  type Job,
+  type JobWSMessage,
+} from "../../../types";
+import { useWebSocket } from "../../../hooks/useWebSocket";
+import { WS_URL, JOB_REMOVE_TIMEOUT } from "../../../constants/ws";
 
 export const JobWSProvider = ({ children }: PropsWithChildren) => {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [error, setError] = useState<string | null>(null);
+
+  const handleJobUpdate = useCallback(
+    (data: JobWSMessage) => {
+      if (data.event === JobEvent.INITIAL_JOBS) {
+        setJobs(data.payload);
+      } else if (data.event === JobEvent.JOB_UPDATE) {
+        setJobs((prevJobs) =>
+          prevJobs.map((prevJob) =>
+            prevJob.id === data.payload.id
+              ? { ...prevJob, ...data.payload }
+              : prevJob
+          )
+        );
+      }
+    },
+    [setJobs]
+  );
+
+  const [isReady, error] = useWebSocket(WS_URL, handleJobUpdate);
+
+  const timersRef = useRef<{
+    [key: string]: ReturnType<typeof setTimeout> | undefined;
+  }>({});
 
   useEffect(() => {
-    // Currently does not work for me: wss://hiring1.beey.io/ws/jobs&period=1000
-    // const socket = new WebSocket("wss://hiring1.beey.io/ws/jobs&period=4000");
-    const socket = new WebSocket("ws://localhost:4000/ws/jobs?period=4000");
-
-    socket.onopen = () => {
-      console.log("WebSocket connection opened");
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.event === "initial-jobs") {
-          setJobs(data.payload);
-        } else if (data.event === "job-update") {
-          setJobs((prevJobs) => {
-            const updatedJobs = prevJobs.map((job) =>
-              job.id === data.payload.id ? { ...job, ...data.payload } : job
-            );
-
-            return updatedJobs;
-          });
-          console.log("Job update received:", data.payload);
-        }
-      } catch (e) {
-        console.error("Failed to parse WebSocket message:", e, event.data);
+    // Clear timeouts for jobs that are no longer present
+    Object.keys(timersRef.current).forEach((id) => {
+      const jobExists = jobs.some((job) => job.id === id);
+      if (!jobExists) {
+        clearTimeout(timersRef.current[id]);
+        delete timersRef.current[id];
       }
-    };
+    });
 
-    socket.onclose = () => {
-      console.log("WebSocket connection closed");
-    };
+    // Set timeout for newly completed jobs
+    jobs.forEach((job) => {
+      if (job.status === JobStatus.COMPLETED && !timersRef.current?.[job.id]) {
+        const timer = setTimeout(() => {
+          setJobs((prevJobs) => prevJobs.filter((j) => j.id !== job.id));
+        }, JOB_REMOVE_TIMEOUT);
 
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setError("WebSocket error occurred. Please try again later.");
-    };
-
-    // Cleanup
-    return () => {
-      socket.close();
-    };
-  }, []);
+        timersRef.current[job.id] = timer;
+      }
+    });
+  }, [jobs]);
 
   return (
-    <JobWSContext.Provider value={{ jobs, error }}>
+    <JobWSContext.Provider value={{ jobs, error, isReady }}>
       {children}
     </JobWSContext.Provider>
   );
